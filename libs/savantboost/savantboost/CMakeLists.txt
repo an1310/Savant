@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22...3.27)
 
 set(library_name savantboost)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined" )
 
@@ -52,7 +52,7 @@ file(GLOB SOURCE_FILES *.cpp *.h */*.cpp */*.cu */*.h )
 
 add_library(${library_name} SHARED  ${SOURCE_FILES})
 
-target_compile_features(${library_name} PRIVATE cuda_std_14 )
+target_compile_features(${library_name} PRIVATE cuda_std_17 )
 
 set(CUDA_LINK_LIBRARIES_KEYWORD PUBLIC)
 
@@ -84,7 +84,11 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL aarch64)
     set(ARCH "72\;87")
 elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL x86_64)
     message("Building for ${CMAKE_SYSTEM_PROCESSOR}")
-    set(ARCH "61\;70\;75\;80\;86\;89\;90")
+    if(CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL 13.0)
+        set(ARCH "75\;80\;86\;89\;90\;120")
+    else()
+        set(ARCH "61\;70\;75\;80\;86\;89\;90")
+    endif()
 else()
     message(FATAL_ERROR "Unsupported arhitecture: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()

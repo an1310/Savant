@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from .platform import is_aarch64
 from .singleton import SingletonMeta
 
 VERSION_FILE_PATH = str(Path(__file__).parent.parent / 'VERSION')
@@ -32,6 +33,8 @@ class Version(metaclass=SingletonMeta):
 
     @property
     def DEEPSTREAM(self):
+        if is_aarch64():
+            return self._versions['DEEPSTREAM_L4T']
         return self._versions['DEEPSTREAM']
 
 

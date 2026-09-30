@@ -53,12 +53,46 @@ This release is based on DeepStream 7.0.
 This release is NOT recommended for production use. 
 The release **ADDS** support for **Blackwell** GPUs and **DROPS** support for **Pascal** GPUs. It supports Jetson Orin (Nano/NX/AGX) hardware.
 
-This release is based on a customized DeepStream 7.1 with TensorRT 10.9.
+The Persalto fork targets DeepStream 9.1 for x86 module images. The Jetson
+Orin images remain on the customized DeepStream 7.1 stack until the Jetson
+runtime and its native dependencies are migrated to JetPack 7.2. Build and
+release tags include the DeepStream version for each platform.
 
-| Requirements                                    | Status | DeepStream | TensorRT |
-|-------------------------------------------------|--------|------------|----------|
-| X86 Driver 570.133.20+                          | Stable | 7.1        | 10.9     |
-| Jetson Orin JetPack 6.2                         | Stable | 7.1        | 10.9     |
+| Requirements                 | Status      | DeepStream | TensorRT |
+|------------------------------|-------------|------------|----------|
+| X86 driver 595.58.03+        | Development | 9.1        | 10.16    |
+| Jetson Orin JetPack 6.2      | Stable      | 7.1        | 10.9     |
+
+For local images, use `make build ARCH=x86_64` on a Linux x86 Docker host. The
+`publish-local` target tags images under `ghcr.io/an1310` by default; set
+`IMAGE_REGISTRY` to use another registry. The run scripts use the same fork
+registry and accept `SAVANT_DOCKER_REGISTRY` to override it.
+
+The x86 build compiles NVIDIA's PyDS bindings, Savant's CUDA OpenCV 4.14
+module, and the DeepStream-facing savant-rs wheels against the 9.1 SDK. It
+needs enough memory and disk for the native builds. Run
+`make build ARCH=x86_64` and `make build-adapters-deepstream ARCH=x86_64` to
+produce the module and
+adapter images. The image build imports PyDS and Savant's native extensions as
+a compatibility check. On the target NVIDIA host, check CUDA frame access,
+rotated crops, frame preprocessing, and the DeepStream video converter before
+using the image for live workloads:
+
+```bash
+docker run --rm --gpus all \
+  -v "$PWD/utils/smoke_deepstream_gpu.py:/tmp/smoke.py:ro" \
+  --entrypoint python savant-deepstream /tmp/smoke.py
+docker run --rm --gpus all --entrypoint gst-launch-1.0 savant-deepstream \
+  videotestsrc num-buffers=1 ! 'video/x-raw,format=RGBA,width=64,height=64' \
+  ! nvvideoconvert ! 'video/x-raw(memory:NVMM),format=RGBA' ! fakesink
+```
+
+The x86 template sample uses these local images by default. Set
+`SAVANT_DEEPSTREAM_IMAGE` and
+`SAVANT_ADAPTERS_DEEPSTREAM_IMAGE` to test registry images instead.
+
+The optional x86 `deepstream-extra` image is unavailable on 9.1 because its
+torch2trt 0.5.0 dependency uses TensorRT APIs removed in 10.16.
 
 ## Chat With Us
 

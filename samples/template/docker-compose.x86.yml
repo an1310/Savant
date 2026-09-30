@@ -1,14 +1,14 @@
 services:
 
   client:
-    image: ghcr.io/insight-platform/savant-deepstream:latest
+    image: ${SAVANT_DEEPSTREAM_IMAGE:-savant-deepstream:latest}
     extends:
       file: docker-compose.l4t.yml
       service: client
 
   uri-input:
     privileged: true
-    image: ghcr.io/insight-platform/savant-deepstream:latest
+    image: ${SAVANT_DEEPSTREAM_IMAGE:-savant-deepstream:latest}
     extends:
       file: docker-compose.l4t.yml
       service: uri-input
@@ -47,7 +47,7 @@ services:
 
   always-on-sink:
     privileged: true
-    image: ghcr.io/insight-platform/savant-adapters-deepstream:latest
+    image: ${SAVANT_ADAPTERS_DEEPSTREAM_IMAGE:-savant-adapters-deepstream:latest}
     extends:
       file: docker-compose.l4t.yml
       service: always-on-sink

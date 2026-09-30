@@ -56,6 +56,8 @@ cudaError_t cudaCrop(
         const NppiRect crop_rect,
         Npp8u* output_image,
         const NppiSize outputSize,
+        unsigned int inputPitch,
+        unsigned int outputPitch,
         int shiftX,
         int shiftY)
 {
@@ -63,15 +65,17 @@ cudaError_t cudaCrop(
         return cudaErrorInvalidDevicePointer;
     if( inputSize.width == 0 || inputSize.height == 0 || crop_rect.width == 0 || crop_rect.height == 0 ||
     crop_rect.x < 0 || crop_rect.y < 0 || crop_rect.x > inputSize.width || crop_rect.y > inputSize.height ||
-    crop_rect.x + crop_rect.width - 1 >= inputSize.width || crop_rect.y + crop_rect.height - 1>= inputSize.height)
+    crop_rect.x + crop_rect.width - 1 >= inputSize.width || crop_rect.y + crop_rect.height - 1>= inputSize.height ||
+    inputPitch % sizeof(Npp32u) != 0 || outputPitch % sizeof(Npp32u) != 0 ||
+    inputPitch < inputSize.width * sizeof(Npp32u) || outputPitch < outputSize.width * sizeof(Npp32u))
         return cudaErrorInvalidValue;
 
     // launch kernel
     dim3 block(8, 8);
     dim3 grid(iDivUp(crop_rect.width, block.x), iDivUp(crop_rect.height,block.y));
 
-    unsigned int src_pitch = inputSize.width;
-    unsigned int dst_pitch = outputSize.width;
+    unsigned int src_pitch = inputPitch / sizeof(Npp32u);
+    unsigned int dst_pitch = outputPitch / sizeof(Npp32u);
 
     crop_8u_C4R<<<grid, block>>>(
             (Npp32u *) ref_frame,

@@ -65,7 +65,7 @@ namespace pysavantboost {
         ref_frame = ds_cuda_memory.GetMapCudaPtr();
         RotateBBox rotated_bbox = RotateBBox(left + width/2, top+height/2, width, height, angle);
         
-        object_image = rotated_bbox.CutFromFrame(ref_frame, ref_frame_size, padding_width, padding_height);
+        object_image = rotated_bbox.CutFromFrame(ref_frame, ref_frame_size, ds_cuda_memory.pitch(), padding_width, padding_height);
 
         const unsigned int pencil_image_elements = object_image->getWidth() * object_image->getHeight() * 4;
 

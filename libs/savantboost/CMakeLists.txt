@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22...3.27)
 
 set(python_module_name pysavantboost)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined" )
 set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--no-undefined" )
@@ -83,4 +83,3 @@ endif()
 pybind11_extension(${python_module_name})
 pybind11_strip(${python_module_name})
 install(TARGETS ${python_module_name} DESTINATION .)
-

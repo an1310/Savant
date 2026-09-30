@@ -36,7 +36,9 @@ jobs:
       savant-version: ${{ steps.get-savant-version.outputs.savant-version }}
       savant-rs-version: ${{ steps.get-savant-version.outputs.savant-rs-version }}
       deepstream-version: ${{ steps.get-savant-version.outputs.deepstream-version }}
+      deepstream-l4t-version: ${{ steps.get-savant-version.outputs.deepstream-l4t-version }}
       savant-deepstream-tag: ${{ steps.get-docker-vars.outputs.deepstream-tag }}
+      savant-deepstream-l4t-tag: ${{ steps.get-docker-vars.outputs.deepstream-l4t-tag }}
       savant-adapters-tag: ${{ steps.get-docker-vars.outputs.adapters-tag }}
       docs-docker-image: ${{ steps.get-docker-vars.outputs.docs-docker-image }}
     steps:
@@ -48,6 +50,7 @@ jobs:
       - id: get-docker-vars
         run: |
           DEEPSTREAM_TAG=latest
+          DEEPSTREAM_L4T_TAG=latest
           ADAPTERS_TAG=latest
           if [ "${{ github.ref_name }}" != "develop" ]; then
             TAG=${{ github.ref_name }}
@@ -64,9 +67,11 @@ jobs:
               exit 1
             fi
             DEEPSTREAM_TAG=${{ steps.get-savant-version.outputs.savant-version }}-${{ steps.get-savant-version.outputs.deepstream-version }}
+            DEEPSTREAM_L4T_TAG=${{ steps.get-savant-version.outputs.savant-version }}-${{ steps.get-savant-version.outputs.deepstream-l4t-version }}
             ADAPTERS_TAG=${{ steps.get-savant-version.outputs.savant-version }}
           fi
           echo "deepstream-tag=$DEEPSTREAM_TAG" >> $GITHUB_OUTPUT
+          echo "deepstream-l4t-tag=$DEEPSTREAM_L4T_TAG" >> $GITHUB_OUTPUT
           echo "adapters-tag=$ADAPTERS_TAG" >> $GITHUB_OUTPUT
           echo "docs-docker-image=${{ env.REGISTRY }}/${{ github.repository_owner }}/savant-deepstream:$DEEPSTREAM_TAG" >> $GITHUB_OUTPUT
         shell: bash
@@ -103,7 +108,11 @@ jobs:
 
       - name: Determine base image
         run: |
-          DEEPSTREAM_VERSION=${{ needs.init.outputs.deepstream-version }}
+          if [ "${{ matrix.group }}" = "native-builders-arm" ]; then
+            DEEPSTREAM_VERSION=${{ needs.init.outputs.deepstream-l4t-version }}
+          else
+            DEEPSTREAM_VERSION=${{ needs.init.outputs.deepstream-version }}
+          fi
           DEEPSTREAM_BASE_IMAGE=nvcr.io/nvidia/deepstream:${DEEPSTREAM_VERSION}-samples-multiarch
           DEEPSTREAM_DEVEL_IMAGE=nvcr.io/nvidia/deepstream:${DEEPSTREAM_VERSION}-triton-multiarch          
           if [ "${{ matrix.group }}" = "native-builders-x86" ]; then
@@ -112,6 +121,7 @@ jobs:
               DEEPSTREAM_DEVEL_IMAGE=ghcr.io/insight-platform/deepstream:7.1.0-devel
             fi
           fi
+          echo "DEEPSTREAM_VERSION=${DEEPSTREAM_VERSION}" >> $GITHUB_ENV
           echo "DEEPSTREAM_BASE_IMAGE=${DEEPSTREAM_BASE_IMAGE}" >> $GITHUB_ENV
           echo "DEEPSTREAM_DEVEL_IMAGE=${DEEPSTREAM_DEVEL_IMAGE}" >> $GITHUB_ENV
 
@@ -121,11 +131,11 @@ jobs:
         with:
           file: ${{ matrix.docker_file }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/savant-${{ matrix.docker_image_suffix }}:${{ needs.init.outputs.savant-deepstream-tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/savant-${{ matrix.docker_image_suffix }}:${{ matrix.group == 'native-builders-arm' && needs.init.outputs.savant-deepstream-l4t-tag || needs.init.outputs.savant-deepstream-tag }}
           build-args: |
             SAVANT_VERSION=${{ needs.init.outputs.savant-version }}
             SAVANT_RS_VERSION=${{ needs.init.outputs.savant-rs-version }}
-            DEEPSTREAM_VERSION=${{ needs.init.outputs.deepstream-version }}
+            DEEPSTREAM_VERSION=${{ env.DEEPSTREAM_VERSION }}
             DEEPSTREAM_BASE_IMAGE=${{ env.DEEPSTREAM_BASE_IMAGE }}
             DEEPSTREAM_DEVEL_IMAGE=${{ env.DEEPSTREAM_DEVEL_IMAGE }}
           target: base
@@ -137,11 +147,11 @@ jobs:
         with:
           file: ${{ matrix.docker_file }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/savant-adapters-${{ matrix.docker_image_suffix }}:${{ needs.init.outputs.savant-deepstream-tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/savant-adapters-${{ matrix.docker_image_suffix }}:${{ matrix.group == 'native-builders-arm' && needs.init.outputs.savant-deepstream-l4t-tag || needs.init.outputs.savant-deepstream-tag }}
           build-args: |
             SAVANT_VERSION=${{ needs.init.outputs.savant-version }}
             SAVANT_RS_VERSION=${{ needs.init.outputs.savant-rs-version }}
-            DEEPSTREAM_VERSION=${{ needs.init.outputs.deepstream-version }}
+            DEEPSTREAM_VERSION=${{ env.DEEPSTREAM_VERSION }}
             DEEPSTREAM_BASE_IMAGE=${{ env.DEEPSTREAM_BASE_IMAGE }}
             DEEPSTREAM_DEVEL_IMAGE=${{ env.DEEPSTREAM_DEVEL_IMAGE }}
           target: adapters
@@ -149,15 +159,16 @@ jobs:
 
       # extra image
       - name: Build and push savant-deepstream-extra docker image
+        if: matrix.group == 'native-builders-arm' || needs.init.outputs.deepstream-version != '9.1'
         uses: docker/build-push-action@v6
         with:
           file: ${{ matrix.docker_file }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/savant-${{ matrix.docker_image_suffix }}-extra:${{ needs.init.outputs.savant-deepstream-tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/savant-${{ matrix.docker_image_suffix }}-extra:${{ matrix.group == 'native-builders-arm' && needs.init.outputs.savant-deepstream-l4t-tag || needs.init.outputs.savant-deepstream-tag }}
           build-args: |
             SAVANT_VERSION=${{ needs.init.outputs.savant-version }}
             SAVANT_RS_VERSION=${{ needs.init.outputs.savant-rs-version }}
-            DEEPSTREAM_VERSION=${{ needs.init.outputs.deepstream-version }}
+            DEEPSTREAM_VERSION=${{ env.DEEPSTREAM_VERSION }}
             DEEPSTREAM_BASE_IMAGE=${{ env.DEEPSTREAM_BASE_IMAGE }}
             DEEPSTREAM_DEVEL_IMAGE=${{ env.DEEPSTREAM_DEVEL_IMAGE }}
           target: ${{ matrix.docker_image_suffix }}-extra
@@ -259,6 +270,7 @@ jobs:
 
   # retag replay containers
   retag-savant-rs-platform-containers:
+    if: github.repository == 'insight-platform/Savant'
     needs: [init, build-savant-deepstream, build-savant-adapters, build-savant-watchdog]
     runs-on: ubuntu-latest
 
@@ -311,6 +323,7 @@ jobs:
 
   # build documentation
   build-docs:
+    if: github.repository == 'insight-platform/Savant'
     needs: [init, build-savant-deepstream]
     runs-on:
       group: native-builders-x86
@@ -353,7 +366,7 @@ jobs:
 
       - name: Attach to release
         if: github.ref_name != 'develop'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: docs.tar
       # --- release

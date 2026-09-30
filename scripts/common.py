@@ -17,10 +17,9 @@ from savant.utils.version import version
 
 # use version.SAVANT or 'latest'
 SAVANT_VERSION = 'latest'
-DEEPSTREAM_VERSION = version.DEEPSTREAM
 
-# docker registry to use with scripts, set to "None" to use local images
-DOCKER_REGISTRY = 'ghcr.io/insight-platform'
+# docker registry to use with scripts; an empty value selects local images
+DOCKER_REGISTRY = os.environ.get('SAVANT_DOCKER_REGISTRY', 'ghcr.io/an1310')
 # DOCKER_REGISTRY = None
 
 socket_uri_pattern = re.compile('([a-z]+\\+[a-z]+:)?([a-z]+://.*)')
@@ -33,7 +32,7 @@ def docker_image_option(default_docker_image_name: str, tag: Optional[str] = Non
 
     default_tag = SAVANT_VERSION
     if 'deepstream' in default_docker_image_name and SAVANT_VERSION != 'latest':
-        default_tag += f'-{DEEPSTREAM_VERSION}'
+        default_tag += f'-{version.DEEPSTREAM}'
 
     if tag:
         default_tag += f'-{tag}'
