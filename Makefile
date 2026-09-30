@@ -6,8 +6,9 @@ SAVANT_VERSION := $(shell cat savant/VERSION | awk -F= '$$1=="SAVANT"{print $$2}
 SAVANT_RS_VERSION := $(shell cat savant/VERSION | awk -F= '$$1=="SAVANT_RS"{print $$2}' | sed 's/"//g')
 DEEPSTREAM_VERSION := $(shell cat savant/VERSION | awk -F= '$$1=="DEEPSTREAM"{print $$2}' | sed 's/"//g')
 DOCKER_FILE := Dockerfile.deepstream
-DEEPSTREAM_BASE_IMAGE := nvcr.io/nvidia/deepstream:$(DEEPSTREAM_VERSION)-samples-multiarch
-DEEPSTREAM_DEVEL_IMAGE := nvcr.io/nvidia/deepstream:$(DEEPSTREAM_VERSION)-triton-multiarch
+IMAGE_REGISTRY ?= ghcr.io/an1310
+DEEPSTREAM_BASE_IMAGE = nvcr.io/nvidia/deepstream:$(DEEPSTREAM_VERSION)-samples-multiarch
+DEEPSTREAM_DEVEL_IMAGE = nvcr.io/nvidia/deepstream:$(DEEPSTREAM_VERSION)-triton-multiarch
 
 ARCH := $(shell uname -m)
 ifeq ($(ARCH), x86_64)
@@ -19,6 +20,7 @@ ifeq ($(ARCH), x86_64)
     	DEEPSTREAM_DEVEL_IMAGE := ghcr.io/insight-platform/deepstream:7.1.0-devel
   	endif
 else ifeq ($(ARCH), aarch64)
+	DEEPSTREAM_VERSION := $(shell awk -F= '$$1=="DEEPSTREAM_L4T"{print $$2}' savant/VERSION)
 	PLATFORM := linux/arm64
 	PLATFORM_SUFFIX := -l4t
 	RUNTIME := --runtime=nvidia
@@ -32,19 +34,19 @@ BUILD_PROGRESS := plain
 #BUILD_PROGRESS := auto
 
 publish-local: build build-adapters-all build-watchdog
-	docker tag savant-deepstream$(PLATFORM_SUFFIX) ghcr.io/insight-platform/savant-deepstream$(PLATFORM_SUFFIX)
-	docker tag savant-adapters-deepstream$(PLATFORM_SUFFIX) ghcr.io/insight-platform/savant-adapters-deepstream$(PLATFORM_SUFFIX)
-	docker tag savant-adapters-gstreamer$(PLATFORM_SUFFIX) ghcr.io/insight-platform/savant-adapters-gstreamer$(PLATFORM_SUFFIX)
-	docker tag savant-adapters-py$(PLATFORM_SUFFIX) ghcr.io/insight-platform/savant-adapters-py$(PLATFORM_SUFFIX)
-	docker tag savant-watchdog$(PLATFORM_SUFFIX) ghcr.io/insight-platform/savant-watchdog$(PLATFORM_SUFFIX)
-	docker tag savant-deepstream$(PLATFORM_SUFFIX) ghcr.io/insight-platform/savant-deepstream$(PLATFORM_SUFFIX):$(SAVANT_VERSION)-$(DEEPSTREAM_VERSION)
-	docker tag savant-adapters-deepstream$(PLATFORM_SUFFIX) ghcr.io/insight-platform/savant-adapters-deepstream$(PLATFORM_SUFFIX):$(SAVANT_VERSION)-$(DEEPSTREAM_VERSION)
-	docker tag savant-adapters-gstreamer$(PLATFORM_SUFFIX) ghcr.io/insight-platform/savant-adapters-gstreamer$(PLATFORM_SUFFIX):$(SAVANT_VERSION)
-	docker tag savant-adapters-py$(PLATFORM_SUFFIX) ghcr.io/insight-platform/savant-adapters-py$(PLATFORM_SUFFIX):$(SAVANT_VERSION)
-	docker tag savant-watchdog$(PLATFORM_SUFFIX) ghcr.io/insight-platform/savant-watchdog$(PLATFORM_SUFFIX):$(SAVANT_VERSION)
+	docker tag savant-deepstream$(PLATFORM_SUFFIX) $(IMAGE_REGISTRY)/savant-deepstream$(PLATFORM_SUFFIX)
+	docker tag savant-adapters-deepstream$(PLATFORM_SUFFIX) $(IMAGE_REGISTRY)/savant-adapters-deepstream$(PLATFORM_SUFFIX)
+	docker tag savant-adapters-gstreamer$(PLATFORM_SUFFIX) $(IMAGE_REGISTRY)/savant-adapters-gstreamer$(PLATFORM_SUFFIX)
+	docker tag savant-adapters-py$(PLATFORM_SUFFIX) $(IMAGE_REGISTRY)/savant-adapters-py$(PLATFORM_SUFFIX)
+	docker tag savant-watchdog$(PLATFORM_SUFFIX) $(IMAGE_REGISTRY)/savant-watchdog$(PLATFORM_SUFFIX)
+	docker tag savant-deepstream$(PLATFORM_SUFFIX) $(IMAGE_REGISTRY)/savant-deepstream$(PLATFORM_SUFFIX):$(SAVANT_VERSION)-$(DEEPSTREAM_VERSION)
+	docker tag savant-adapters-deepstream$(PLATFORM_SUFFIX) $(IMAGE_REGISTRY)/savant-adapters-deepstream$(PLATFORM_SUFFIX):$(SAVANT_VERSION)-$(DEEPSTREAM_VERSION)
+	docker tag savant-adapters-gstreamer$(PLATFORM_SUFFIX) $(IMAGE_REGISTRY)/savant-adapters-gstreamer$(PLATFORM_SUFFIX):$(SAVANT_VERSION)
+	docker tag savant-adapters-py$(PLATFORM_SUFFIX) $(IMAGE_REGISTRY)/savant-adapters-py$(PLATFORM_SUFFIX):$(SAVANT_VERSION)
+	docker tag savant-watchdog$(PLATFORM_SUFFIX) $(IMAGE_REGISTRY)/savant-watchdog$(PLATFORM_SUFFIX):$(SAVANT_VERSION)
 
 publish-local-extra: build-extra
-	docker tag savant-deepstream$(PLATFORM_SUFFIX)-extra ghcr.io/insight-platform/savant-deepstream$(PLATFORM_SUFFIX)-extra
+	docker tag savant-deepstream$(PLATFORM_SUFFIX)-extra $(IMAGE_REGISTRY)/savant-deepstream$(PLATFORM_SUFFIX)-extra
 
 build:
 	docker build --progress=$(BUILD_PROGRESS) \
@@ -86,6 +88,7 @@ build-watchdog:
 		-t savant-watchdog$(PLATFORM_SUFFIX) .
 
 build-extra-packages:
+	@if [ "$(DEEPSTREAM_VERSION)" = "9.1" ]; then echo "torch2trt 0.5.0 is incompatible with TensorRT 10.16; the DeepStream 9.1 extra image is unavailable." >&2; exit 1; fi
 	docker buildx build --progress=$(BUILD_PROGRESS) --load \
 		--platform $(PLATFORM) \
 		--target extra$(PLATFORM_SUFFIX)-builder \
@@ -103,6 +106,7 @@ build-extra-packages:
 		savant-extra$(PLATFORM_SUFFIX)-builder
 
 build-extra:
+	@if [ "$(DEEPSTREAM_VERSION)" = "9.1" ]; then echo "torch2trt 0.5.0 is incompatible with TensorRT 10.16; the DeepStream 9.1 extra image is unavailable." >&2; exit 1; fi
 	docker build --progress=$(BUILD_PROGRESS) \
 		--target deepstream$(PLATFORM_SUFFIX)-extra \
 		--build-arg DEEPSTREAM_VERSION=$(DEEPSTREAM_VERSION) \
@@ -112,6 +116,8 @@ build-extra:
 		-f docker/$(DOCKER_FILE) \
 		-t savant-deepstream$(PLATFORM_SUFFIX)-extra .
 
+build-opencv-arm64: DEEPSTREAM_VERSION := $(shell awk -F= '$$1=="DEEPSTREAM_L4T"{print $$2}' savant/VERSION)
+build-opencv-amd64: DEEPSTREAM_VERSION := $(shell awk -F= '$$1=="DEEPSTREAM"{print $$2}' savant/VERSION)
 build-opencv-%:
 	docker buildx build --progress=$(BUILD_PROGRESS) --load \
 		--platform linux/$* \

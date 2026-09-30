@@ -1,4 +1,4 @@
-ARG DEEPSTREAM_VERSION=7.1
+ARG DEEPSTREAM_VERSION=9.1
 ARG DEEPSTREAM_DEVEL_IMAGE=nvcr.io/nvidia/deepstream:$DEEPSTREAM_VERSION-triton-multiarch
 ARG DEEPSTREAM_BASE_IMAGE=nvcr.io/nvidia/deepstream:$DEEPSTREAM_VERSION-samples-multiarch
 FROM $DEEPSTREAM_DEVEL_IMAGE AS builder
@@ -46,6 +46,84 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
 FROM builder AS extra-builder
 # TODO: Move to r36.3+
 FROM dustynv/l4t-pytorch:r36.2.0 AS extra-l4t-builder
+
+
+# The DS 9.1 package store does not contain Savant's CUDA OpenCV build.
+# Keep the 7.1 package path for Jetson Orin until its JetPack upgrade.
+FROM builder AS opencv-package-builder
+ARG TARGETARCH
+ARG TARGETPLATFORM
+ARG DEEPSTREAM_VERSION
+ARG OPENCV_VERSION=4.12.0
+ARG PACKAGES_URL=https://eu-central-1.linodeobjects.com/savant-data/packages/${TARGETPLATFORM}/ds${DEEPSTREAM_VERSION}
+COPY libs/opencv/savant /tmp/opencv-savant
+COPY utils/build_opencv.sh /tmp/build_opencv.sh
+RUN if [ "$DEEPSTREAM_VERSION" = "9.1" ]; then \
+      OPENCV_VERSION=4.14.0 \
+        bash /tmp/build_opencv.sh /tmp/opencv-savant /tmp/opencv.tar.gz; \
+    else \
+      wget -nv -O /tmp/opencv.tar.gz \
+        "${PACKAGES_URL}/opencv-${OPENCV_VERSION}-${TARGETARCH}-ds${DEEPSTREAM_VERSION}.tar.gz"; \
+    fi
+
+
+# NVIDIA no longer publishes PyDS wheels for DeepStream 9.x.
+FROM builder AS pyds-package-builder
+ARG TARGETARCH
+ARG DEEPSTREAM_VERSION
+ARG PYDS_SOURCE_REV=8ad0349ed7a496fae35ebb21c350641727070b89
+RUN mkdir -p /tmp/pyds-dist && \
+    if [ "$DEEPSTREAM_VERSION" = "9.1" ]; then \
+      apt-get update && apt-get install --no-install-recommends -y \
+        git g++ build-essential libglib2.0-dev libgstreamer1.0-dev && \
+      git init /tmp/deepstream_python_apps && \
+      cd /tmp/deepstream_python_apps && \
+      git remote add origin https://github.com/NVIDIA-AI-IOT/deepstream_python_apps.git && \
+      git fetch --depth 1 origin "$PYDS_SOURCE_REV" && \
+      git checkout --detach FETCH_HEAD && \
+      git submodule update --init bindings/3rdparty/pybind11 && \
+      cd bindings && \
+      CMAKE_ARGS="-DDS_PATH=/opt/nvidia/deepstream/deepstream" \
+        CMAKE_BUILD_PARALLEL_LEVEL=4 python3 -m build --wheel && \
+      cp dist/pyds-*.whl /tmp/pyds-dist/; \
+    else \
+      wget -nv -P /tmp/pyds-dist \
+        https://github.com/NVIDIA-AI-IOT/deepstream_python_apps/releases/download/v1.2.0/pyds-1.2.0-cp310-cp310-linux_aarch64.whl; \
+    fi
+
+
+# The released savant-rs DeepStream wheels link libcudart.so.12. Rebuild the
+# two SDK-facing wheels against the CUDA 13 and DeepStream 9.1 headers.
+FROM builder AS savant-rs-ds-builder
+ARG DEEPSTREAM_VERSION
+ARG SAVANT_RS_REV=7e9614f22d40030d305eeef868f6b85d6bfd524b
+ENV PATH="/root/.cargo/bin:$PATH" \
+    CARGO_TARGET_DIR=/tmp/savant-rs-target \
+    CARGO_BUILD_JOBS=4 \
+    CARGO_INCREMENTAL=0
+RUN set -eux; \
+    mkdir -p /tmp/rs-ds-wheels; \
+    if [ "$DEEPSTREAM_VERSION" = "9.1" ]; then \
+      apt-get update; \
+      apt-get install --no-install-recommends -y \
+        clang libclang-dev build-essential pkg-config curl git \
+        libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+        libgl-dev libegl-dev libfontconfig-dev fonts-dejavu-core; \
+      curl -fsSL https://sh.rustup.rs -o /tmp/rustup-init.sh; \
+      sh /tmp/rustup-init.sh -y --profile minimal; \
+      python3 -m pip install --no-cache-dir 'maturin[patchelf]~=1.9'; \
+      git init /tmp/savant-rs; \
+      cd /tmp/savant-rs; \
+      git remote add origin https://github.com/insight-platform/savant-rs.git; \
+      git fetch --depth 1 origin "$SAVANT_RS_REV"; \
+      git checkout --detach FETCH_HEAD; \
+      maturin build --release --interpreter python3 \
+        --manifest-path savant_deepstream/deepstream_nvbufsurface/Cargo.toml \
+        --out /tmp/rs-ds-wheels; \
+      maturin build --release --interpreter python3 \
+        --manifest-path savant_deepstream/deepstream_encoders/Cargo.toml \
+        --out /tmp/rs-ds-wheels; \
+    fi
 
 
 # Savant python package builder
@@ -154,20 +232,18 @@ ENV PATH="/opt/venv/bin:$PATH" \
     LD_LIBRARY_PATH=/opt/venv/lib:/opt/nvidia/deepstream/deepstream/lib:$LD_LIBRARY_PATH
 
 ARG OPENCV_VERSION=4.12.0
-# local install
-#RUN --mount=type=bind,source=packages/linux/amd64/ds${DEEPSTREAM_VERSION}/opencv-${OPENCV_VERSION}-${TARGETARCH}-ds${DEEPSTREAM_VERSION}.tar.gz,target=/tmp/opencv.tar.gz \
-#    mkdir -p /tmp/dist && \
-#    tar -xf /tmp/opencv.tar.gz -C /tmp/dist && \
-#    dpkg -i /tmp/dist/OpenCV* && \
-#    rm -rf /tmp/dist
-RUN wget -qO- \
-    ${PACKAGES_URL}/opencv-${OPENCV_VERSION}-${TARGETARCH}-ds${DEEPSTREAM_VERSION}.tar.gz \
-    | tar xz && \
-    dpkg -i OpenCV* && \
-    rm OpenCV*
+COPY --from=opencv-package-builder /tmp/opencv.tar.gz /tmp/opencv.tar.gz
+RUN mkdir -p /tmp/opencv-dist && \
+    tar -xf /tmp/opencv.tar.gz -C /tmp/opencv-dist && \
+    dpkg -i /tmp/opencv-dist/OpenCV*.deb && \
+    rm -rf /tmp/opencv-dist /tmp/opencv.tar.gz
 
 RUN --mount=type=bind,source=requirements/base.txt,target=/tmp/requirements.txt \
     python -m pip install --no-cache-dir -r /tmp/requirements.txt
+
+COPY --from=pyds-package-builder /tmp/pyds-dist /tmp/pyds-dist
+RUN python -m pip install --no-cache-dir /tmp/pyds-dist/*.whl && \
+    rm -rf /tmp/pyds-dist
 
 RUN --mount=from=savant-boost-builder,source=/libs/savantboost/dist,target=/tmp/dist \
     python -m pip install --no-cache-dir /tmp/dist/*.whl
@@ -181,6 +257,12 @@ RUN --mount=type=bind,source=local_wheels,target=local_wheels \
     --mount=type=bind,source=utils/install_savant_rs.py,target=utils/install_savant_rs.py \
     ./utils/install_savant_rs.py $SAVANT_RS_VERSION ./tmp && rm -rf ./tmp
 
+COPY --from=savant-rs-ds-builder /tmp/rs-ds-wheels /tmp/rs-ds-wheels
+RUN if [ "$DEEPSTREAM_VERSION" = "9.1" ]; then \
+      python -m pip install --no-cache-dir --force-reinstall --no-deps \
+        /tmp/rs-ds-wheels/deepstream_*.whl; \
+    fi && rm -rf /tmp/rs-ds-wheels
+
 RUN --mount=from=savant-meta-builder,source=/libs/gstsavantframemeta/dist,target=/tmp/dist \
     python -m pip install --no-cache-dir /tmp/dist/*.whl
 
@@ -189,6 +271,11 @@ RUN --mount=from=nv-buf-surface-generator-builder,source=/libs/nvbufsurfacegener
 
 RUN --mount=from=savant-package-builder,source=/tmp/build/dist,target=/tmp/dist \
     python -m pip install --no-cache-dir /tmp/dist/*.whl
+
+# Fail the image build if the DeepStream/PyDS ABI or Savant's native extensions
+# cannot be imported together. This also checks the CUDA-enabled OpenCV package
+# used by pyfunc frame access.
+RUN python -c "import cv2, pyds, pygstsavantframemeta, pysavantboost, pynvbufsurfacegenerator, deepstream_nvbufsurface, deepstream_encoders; assert hasattr(cv2.savant, 'createGpuMat'); import savant.deepstream.opencv_utils; import savant.deepstream.pipeline"
 
 # copy headers for cupy NVRTC
 COPY --from=builder /usr/local/cuda/include /usr/local/cuda/include
@@ -308,6 +395,10 @@ ARG TARGETARCH
 ARG TARGETPLATFORM
 ARG DEEPSTREAM_VERSION
 ARG PACKAGES_URL=https://eu-central-1.linodeobjects.com/savant-data/packages/${TARGETPLATFORM}/ds${DEEPSTREAM_VERSION}
+RUN if [ "$DEEPSTREAM_VERSION" = "9.1" ]; then \
+      echo 'The optional torch2trt extra image is unavailable for TensorRT 10.16.' >&2; \
+      exit 1; \
+    fi
 
 # torch, torchvision, torchaudio
 RUN python -m pip install --no-cache-dir torch torchvision torchaudio

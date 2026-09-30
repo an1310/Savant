@@ -1,4 +1,5 @@
-FROM ghcr.io/insight-platform/savant-deepstream:latest
+ARG SAVANT_DEEPSTREAM_IMAGE=savant-deepstream:latest
+FROM ${SAVANT_DEEPSTREAM_IMAGE}
 
 COPY requirements.txt requirements.txt
 RUN python -m pip install -r requirements.txt

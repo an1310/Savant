@@ -10,6 +10,9 @@ outputs:
   deepstream-version:
     description: DeepStream version
     value: ${{ steps.get-deepstream-version.outputs.deepstream-version }}
+  deepstream-l4t-version:
+    description: DeepStream version for Jetson Orin
+    value: ${{ steps.get-deepstream-l4t-version.outputs.deepstream-l4t-version }}
 runs:
   using: composite
   steps:
@@ -23,8 +26,12 @@ runs:
     - id: get-deepstream-version
       run: echo "deepstream-version=$(cat savant/VERSION | awk -F= '$1=="DEEPSTREAM"{print $2}' | sed 's/"//g')" >> $GITHUB_OUTPUT
       shell: bash
+    - id: get-deepstream-l4t-version
+      run: echo "deepstream-l4t-version=$(cat savant/VERSION | awk -F= '$1=="DEEPSTREAM_L4T"{print $2}' | sed 's/"//g')" >> $GITHUB_OUTPUT
+      shell: bash
     - run: |
         echo Savant version: ${{ steps.get-savant-version.outputs.savant-version }}
         echo Savant RS version: ${{ steps.get-savant-rs-version.outputs.savant-rs-version }}
         echo DeepStream version: ${{ steps.get-deepstream-version.outputs.deepstream-version }}
+        echo DeepStream L4T version: ${{ steps.get-deepstream-l4t-version.outputs.deepstream-l4t-version }}
       shell: bash
