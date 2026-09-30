@@ -4,7 +4,6 @@
 .gitignore
 .git
 .github/
-docker/
 .dockerignore
 Makefile
 **/_skbuild/

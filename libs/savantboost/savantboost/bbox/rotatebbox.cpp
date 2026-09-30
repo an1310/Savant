@@ -10,8 +10,30 @@
 
 
 #include "rotatebbox.h"
+#include <cuda_runtime.h>
 #include <cmath>
+#include <memory>
 #include <npp.h>
+#include <stdexcept>
+
+
+static NppStreamContext currentNppStreamContext() {
+    NppStreamContext context{};
+    cudaDeviceProp properties{};
+    if (cudaGetDevice(&context.nCudaDeviceId) != cudaSuccess ||
+        cudaGetDeviceProperties(&properties, context.nCudaDeviceId) != cudaSuccess) {
+        throw std::runtime_error("Failed to get CUDA device properties for NPP");
+    }
+    context.hStream = nullptr;
+    context.nMultiProcessorCount = properties.multiProcessorCount;
+    context.nMaxThreadsPerMultiProcessor = properties.maxThreadsPerMultiProcessor;
+    context.nMaxThreadsPerBlock = properties.maxThreadsPerBlock;
+    context.nSharedMemPerBlock = properties.sharedMemPerBlock;
+    context.nCudaDevAttrComputeCapabilityMajor = properties.major;
+    context.nCudaDevAttrComputeCapabilityMinor = properties.minor;
+    context.nStreamFlags = cudaStreamDefault;
+    return context;
+}
 
 
 RotateBBox::RotateBBox(float x_center, float y_center, float width, float height, float angle) {
@@ -32,10 +54,9 @@ RotateBBox::RotateBBox(float x_center, float y_center, float width, float height
     _confidence = confidence;
 }
 
-savantboost::Image* RotateBBox::CutFromFrame(Npp8u* frame, NppiSize frame_size, float padding_width, float padding_height ) {
+savantboost::Image* RotateBBox::CutFromFrame(Npp8u* frame, NppiSize frame_size, int frame_step, float padding_width, float padding_height ) {
     double rotated_ex_rect_bbox[2][2];
     float max_side =std::fmax(_height, _width);
-    savantboost::Image* object_image;
 
 
     NppiRect ex_rect_bbox = {
@@ -55,7 +76,7 @@ savantboost::Image* RotateBBox::CutFromFrame(Npp8u* frame, NppiSize frame_size, 
     nppiGetRotateBound(ex_rect_bbox, rotated_ex_rect_bbox, (double) _angle, 0, 0 );
     int image_width = (int) _width + (int) std::ceil(padding_width * 2);
     int image_height = (int) _height + (int) std::ceil(padding_height * 2);
-    object_image = new savantboost::Image(image_width, image_height);
+    auto object_image = std::make_unique<savantboost::Image>(image_width, image_height);
 
     NppiRect ex_rect_pencil_bbox = {
             .x = (int) 0,
@@ -68,10 +89,10 @@ savantboost::Image* RotateBBox::CutFromFrame(Npp8u* frame, NppiSize frame_size, 
     float shift_y = -rotated_ex_rect_bbox[0][1] -
                     (rotated_ex_rect_bbox[1][1] - rotated_ex_rect_bbox[0][1]) / 2 + _height / 2 + padding_height;
 
-    nppiRotate_8u_C4R(
+    const NppStatus npp_status = nppiRotate_8u_C4R_Ctx(
             frame,
             frame_size,
-            frame_size.width * 4,
+            frame_step,
             ex_rect_bbox,
             (Npp8u*) object_image->getDataPtr(),
             ex_rect_pencil_bbox.width * 4,
@@ -79,8 +100,15 @@ savantboost::Image* RotateBBox::CutFromFrame(Npp8u* frame, NppiSize frame_size, 
             _angle,
             shift_x,
             shift_y,
-            NPPI_INTER_LINEAR
+            NPPI_INTER_LINEAR,
+            currentNppStreamContext()
     );
-    cudaDeviceSynchronize();
-    return object_image;
+    if (npp_status != NPP_SUCCESS) {
+        throw std::runtime_error("NPP rotation failed: " + std::to_string(npp_status));
+    }
+    const cudaError_t cuda_status = cudaDeviceSynchronize();
+    if (cuda_status != cudaSuccess) {
+        throw std::runtime_error(cudaGetErrorString(cuda_status));
+    }
+    return object_image.release();
 }

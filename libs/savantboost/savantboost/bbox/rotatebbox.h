@@ -41,13 +41,14 @@ public:
     /**
      * @brief Cut object from the frame 
      * 
-     * @param frame pointer to the frame in GPu memory
+     * @param frame pointer to the frame in GPU memory
      * @param frame_size frame size 
+     * @param frame_step source row pitch in bytes
      * @param padding_width Padding size (pixels) by the width of the box with which the box will be cut from the frame
      * @param padding_height Padding size (pixels) by the height of the box with which the box will be cut from the frame
      * @return savantboost::Image* Pointer to Image object
      */
-    savantboost::Image* CutFromFrame(Npp8u* frame, NppiSize frame_size, float padding_width, float padding_height);
+    savantboost::Image* CutFromFrame(Npp8u* frame, NppiSize frame_size, int frame_step, float padding_width, float padding_height);
 };
 
 #endif //DEEPSTREAM_PENCILS_ROTATEBBOX_H

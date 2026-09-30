@@ -35,11 +35,11 @@
 #include <thrust/device_ptr.h>
 #include <thrust/execution_policy.h>
 #include <thrust/gather.h>
+#include <thrust/iterator/counting_iterator.h>
 #include <thrust/sequence.h>
 #include <cub/device/device_select.cuh>
 #include <cub/device/device_radix_sort.cuh>
 #include <cub/util_allocator.cuh>
-#include <cub/iterator/counting_input_iterator.cuh>
 #include "../types.h"
 #include "helpers.h"
 constexpr int   kTPB     = 64;  // threads per block
@@ -284,7 +284,7 @@ int nms_rotate(
     size_t  temp_size_flag  = 0;
     void    *d_temp_storage_flag     = NULL;
     DeviceSelect::Flagged((void*)nullptr, temp_size_flag,
-      CountingInputIterator<int>(count), (bool*)nullptr, (int*)nullptr, (int*)nullptr, count);
+      thrust::counting_iterator<int>(count), (bool*)nullptr, (int*)nullptr, (int*)nullptr, count);
     CubDebugExit(g_allocator.DeviceAllocate(&d_temp_storage_flag, temp_size_flag));
 
     size_t temp_size_sort = 0;
@@ -337,7 +337,7 @@ int nms_rotate(
 
     int *num_selected = reinterpret_cast<int *>( indices_sorted );
 
-    cub::DeviceSelect::Flagged(d_temp_storage_flag, temp_size_flag, cub::CountingInputIterator<int>(0), flags,
+    cub::DeviceSelect::Flagged(d_temp_storage_flag, temp_size_flag, thrust::counting_iterator<int>(0), flags,
         indices, num_selected, count, streams );
     cudaStreamSynchronize( streams );
     int num_detections = *thrust::device_pointer_cast( num_selected );

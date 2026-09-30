@@ -6,12 +6,15 @@
 #define LIBS_CUDACROP_H
 #include "npp.h"
 
+// Pitches are byte strides; the kernel converts them to RGBA pixel strides.
 cudaError_t cudaCrop(
         const Npp8u *ref_frame,
         NppiSize inputSize,
         NppiRect crop_rect,
         Npp8u* output,
         NppiSize outputSize,
+        unsigned int inputPitch,
+        unsigned int outputPitch,
         int shiftX,
         int shiftY);
 

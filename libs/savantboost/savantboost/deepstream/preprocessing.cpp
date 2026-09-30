@@ -122,11 +122,14 @@ GstFlowReturn ObjectsPreprocessing::preprocessing(
             frame_width = (int) surface->surfaceList[frame_meta->batch_id].planeParams.width[0];
             ref_frame_size = {frame_width, frame_height};
             ref_frame = ds_cuda_memory.GetMapCudaPtr();
-            const size_t ref_image_bytes= ref_frame_size.width*ref_frame_size.height*sizeof(Npp8u)*4;
+            const size_t row_bytes = ref_frame_size.width * sizeof(Npp8u) * 4;
+            const size_t ref_image_bytes = row_bytes * ref_frame_size.height;
 
             cudaMalloc((void **)&copy_frame, ref_image_bytes);
             cudaCheckError()
-            cudaMemcpy((void *) copy_frame, (void *) ref_frame, ref_image_bytes, cudaMemcpyDeviceToDevice);
+            cudaMemcpy2D((void *) copy_frame, row_bytes, (void *) ref_frame,
+                         ds_cuda_memory.pitch(), row_bytes, ref_frame_size.height,
+                         cudaMemcpyDeviceToDevice);
             cudaCheckError()
             frames_map[(size_t) inbuf].insert({frame_meta->batch_id, (void *) copy_frame});
             
@@ -143,7 +146,7 @@ GstFlowReturn ObjectsPreprocessing::preprocessing(
                         if (rbbox)
                         {
                             RotateBBox rotated_bbox = RotateBBox(rbbox->x_center, rbbox->y_center, rbbox->width, rbbox->height, rbbox->angle);
-                            preproc_object = rotated_bbox.CutFromFrame(copy_frame, ref_frame_size, padding_width, padding_height);
+                            preproc_object = rotated_bbox.CutFromFrame(copy_frame, ref_frame_size, row_bytes, padding_width, padding_height);
                         }
                         else {
                             GST_ERROR("Rbbox don't found rotated bbox for %ld", object_meta->object_id);
@@ -171,6 +174,8 @@ GstFlowReturn ObjectsPreprocessing::preprocessing(
                             crop_rect,
                             (Npp8u*) preproc_object->getDataPtr(),
                             dst_image_size,
+                            row_bytes,
+                            dst_image_size.width * sizeof(Npp8u) * 4,
                             0,
                             0
                             );
@@ -204,6 +209,8 @@ GstFlowReturn ObjectsPreprocessing::preprocessing(
                         crop_rect,
                         ref_frame,
                         ref_frame_size,
+                        clc_image_size.width * sizeof(Npp8u) * 4,
+                        ds_cuda_memory.pitch(),
                         left,
                         top
                     );
@@ -240,7 +247,7 @@ GstFlowReturn ObjectsPreprocessing::restore_frame(GstBuffer* gst_buffer){
     NvBufSurface *surface;
     int frame_height, frame_width;
     NppiSize frame_size;
-    size_t frame_bytes;
+    size_t row_bytes;
     Npp8u *frame, *ref_frame;
 
     status = gst_buffer_map (gst_buffer, &in_map_info, GST_MAP_READ);
@@ -256,11 +263,12 @@ GstFlowReturn ObjectsPreprocessing::restore_frame(GstBuffer* gst_buffer){
             frame_width = (int) surface->surfaceList[frame_meta->batch_id].planeParams.width[0];
             frame_size = {frame_width, frame_height};
             frame = ds_cuda_memory.GetMapCudaPtr();
-            frame_bytes = frame_width*frame_height*sizeof(Npp8u)*4;
+            row_bytes = frame_width * sizeof(Npp8u) * 4;
 
             ref_frame = (Npp8u *) frames_map[(size_t) gst_buffer][frame_meta->batch_id];
 
-            cudaMemcpy((void *) frame, (void *) ref_frame, frame_bytes, cudaMemcpyDeviceToDevice);
+            cudaMemcpy2D((void *) frame, ds_cuda_memory.pitch(), (void *) ref_frame,
+                         row_bytes, row_bytes, frame_height, cudaMemcpyDeviceToDevice);
             cudaCheckError()
             cudaFree(ref_frame);
             cudaCheckError()

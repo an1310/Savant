@@ -97,6 +97,7 @@ RUN mkdir -p /tmp/pyds-dist && \
 FROM builder AS savant-rs-ds-builder
 ARG DEEPSTREAM_VERSION
 ARG SAVANT_RS_REV=7e9614f22d40030d305eeef868f6b85d6bfd524b
+COPY docker/patches/savant-rs-deepstream-9.1.patch /tmp/savant-rs-deepstream-9.1.patch
 ENV PATH="/root/.cargo/bin:$PATH" \
     CARGO_TARGET_DIR=/tmp/savant-rs-target \
     CARGO_BUILD_JOBS=4 \
@@ -117,6 +118,7 @@ RUN set -eux; \
       git remote add origin https://github.com/insight-platform/savant-rs.git; \
       git fetch --depth 1 origin "$SAVANT_RS_REV"; \
       git checkout --detach FETCH_HEAD; \
+      git apply /tmp/savant-rs-deepstream-9.1.patch; \
       maturin build --release --interpreter python3 \
         --manifest-path savant_deepstream/deepstream_nvbufsurface/Cargo.toml \
         --out /tmp/rs-ds-wheels; \
@@ -179,6 +181,18 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 COPY libs/savantboost .
 RUN python3 -m build --wheel --no-isolation && rm -rf _skbuild
+
+
+# The GPU driver is injected only at container runtime. Use the CUDA link stub
+# for build-time imports, then exercise the real driver in the GPU smoke check.
+FROM builder AS cuda-link-stub
+ARG TARGETARCH
+ARG DEEPSTREAM_VERSION
+RUN mkdir -p /tmp/cuda-stubs && \
+    if [ "$DEEPSTREAM_VERSION" = "9.1" ] && [ "$TARGETARCH" = "amd64" ]; then \
+      cp /usr/local/cuda/targets/x86_64-linux/lib/stubs/libcuda.so \
+        /tmp/cuda-stubs/libcuda.so.1; \
+    fi
 
 
 # Savant base container
@@ -275,7 +289,11 @@ RUN --mount=from=savant-package-builder,source=/tmp/build/dist,target=/tmp/dist 
 # Fail the image build if the DeepStream/PyDS ABI or Savant's native extensions
 # cannot be imported together. This also checks the CUDA-enabled OpenCV package
 # used by pyfunc frame access.
-RUN python -c "import cv2, pyds, pygstsavantframemeta, pysavantboost, pynvbufsurfacegenerator, deepstream_nvbufsurface, deepstream_encoders; assert hasattr(cv2.savant, 'createGpuMat'); import savant.deepstream.opencv_utils; import savant.deepstream.pipeline"
+RUN --mount=from=cuda-link-stub,source=/tmp/cuda-stubs,target=/tmp/cuda-stubs \
+    if [ "$DEEPSTREAM_VERSION" = "9.1" ]; then \
+      export LD_LIBRARY_PATH="/tmp/cuda-stubs:$LD_LIBRARY_PATH"; \
+    fi && \
+    python -c "import cv2, pyds, pygstsavantframemeta, pysavantboost, pynvbufsurfacegenerator, deepstream_nvbufsurface, deepstream_encoders; assert hasattr(cv2.savant, 'createGpuMat'); import savant.deepstream.opencv_utils; import savant.deepstream.pipeline"
 
 # copy headers for cupy NVRTC
 COPY --from=builder /usr/local/cuda/include /usr/local/cuda/include

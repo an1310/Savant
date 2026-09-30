@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22...3.27)
 
 set(library_name savantboost)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined" )
 
@@ -52,7 +52,7 @@ file(GLOB SOURCE_FILES *.cpp *.h */*.cpp */*.cu */*.h )
 
 add_library(${library_name} SHARED  ${SOURCE_FILES})
 
-target_compile_features(${library_name} PRIVATE cuda_std_14 )
+target_compile_features(${library_name} PRIVATE cuda_std_17 )
 
 set(CUDA_LINK_LIBRARIES_KEYWORD PUBLIC)
 

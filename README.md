@@ -74,12 +74,14 @@ needs enough memory and disk for the native builds. Run
 `make build ARCH=x86_64` and `make build-adapters-deepstream ARCH=x86_64` to
 produce the module and
 adapter images. The image build imports PyDS and Savant's native extensions as
-a compatibility check. On the target NVIDIA host, check CUDA frame access and
-the DeepStream video converter before using the image for live workloads:
+a compatibility check. On the target NVIDIA host, check CUDA frame access,
+rotated crops, frame preprocessing, and the DeepStream video converter before
+using the image for live workloads:
 
 ```bash
-docker run --rm --gpus all --entrypoint python savant-deepstream -c \
-  'import cv2, numpy as np, pyds, deepstream_nvbufsurface, deepstream_encoders; frame = cv2.cuda.GpuMat(); frame.upload(np.zeros((8, 8, 4), dtype=np.uint8)); assert frame.download().shape == (8, 8, 4)'
+docker run --rm --gpus all \
+  -v "$PWD/utils/smoke_deepstream_gpu.py:/tmp/smoke.py:ro" \
+  --entrypoint python savant-deepstream /tmp/smoke.py
 docker run --rm --gpus all --entrypoint gst-launch-1.0 savant-deepstream \
   videotestsrc num-buffers=1 ! 'video/x-raw,format=RGBA,width=64,height=64' \
   ! nvvideoconvert ! 'video/x-raw(memory:NVMM),format=RGBA' ! fakesink

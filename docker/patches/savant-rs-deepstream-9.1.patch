@@ -1,0 +1,20 @@
+diff --git a/savant_deepstream/deepstream_nvbufsurface/src/transform.rs b/savant_deepstream/deepstream_nvbufsurface/src/transform.rs
+index 6866d65..9e2f701 100644
+--- a/savant_deepstream/deepstream_nvbufsurface/src/transform.rs
++++ b/savant_deepstream/deepstream_nvbufsurface/src/transform.rs
+@@ -129,2 +129,3 @@ impl Rect {
+             height: self.height,
++            reserved: Default::default(),
+         }
+@@ -288,2 +289,3 @@ pub(crate) unsafe fn do_transform(
+         cuda_stream: config.cuda_stream as *mut transform_ffi::CUstream_st,
++        reserved: Default::default(),
+     };
+@@ -302,2 +304,3 @@ pub(crate) unsafe fn do_transform(
+             height: src_h,
++            reserved: Default::default(),
+         },
+@@ -364,2 +367,3 @@ pub(crate) unsafe fn do_transform(
+         dst_rect: &mut dst_rect_ffi,
++        reserved: Default::default(),
+     };

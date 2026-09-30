@@ -23,10 +23,13 @@ cd /opencv/build
 
 PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 CUDA_OPTIONS=()
+OPENCV_BUILD_LIST=core,cudaarithm,cudabgsegm,cudacodec,cudafeatures2d,cudafilters,cudaimgproc,cudev,features2d,flann,calib3d,imgcodecs,savant,python3
 if [[ "${DEEPSTREAM_VERSION:-}" == "9.1" ]]; then
     # CUDA 13 no longer accepts Pascal or Volta targets. Explicit targets also
     # let this build run on a Linux builder without a visible GPU.
     CUDA_OPTIONS=(-D "CUDA_ARCH_BIN=7.5 8.0 8.6 8.9 9.0 12.0")
+    # cudacodec still requires CUDA_CUDA_LIBRARY, which CUDA 13 no longer ships.
+    OPENCV_BUILD_LIST=${OPENCV_BUILD_LIST/,cudacodec/}
 fi
 cmake \
     -D CMAKE_BUILD_TYPE=RELEASE \
@@ -34,7 +37,7 @@ cmake \
     -D CMAKE_INSTALL_PREFIX=/opencv/dist \
     -D OPENCV_DOWNLOAD_PATH=/tmp/opencv-cache \
     -D PYTHON_DEFAULT_EXECUTABLE="$(command -v python3)" \
-    -D BUILD_LIST=core,cudaarithm,cudabgsegm,cudacodec,cudafeatures2d,cudafilters,cudaimgproc,cudev,features2d,flann,calib3d,imgcodecs,savant,python3 \
+    -D BUILD_LIST="$OPENCV_BUILD_LIST" \
     -D BUILD_opencv_apps=OFF \
     -D BUILD_DOCS=OFF \
     -D BUILD_EXAMPLES=OFF \
