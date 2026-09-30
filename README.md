@@ -74,9 +74,19 @@ needs enough memory and disk for the native builds. Run
 `make build ARCH=x86_64` and `make build-adapters-deepstream ARCH=x86_64` to
 produce the module and
 adapter images. The image build imports PyDS and Savant's native extensions as
-a compatibility check. Run a GPU pipeline smoke test on the target host before
-using the image for live workloads. The x86 template sample uses these local
-images by default. Set `SAVANT_DEEPSTREAM_IMAGE` and
+a compatibility check. On the target NVIDIA host, check CUDA frame access and
+the DeepStream video converter before using the image for live workloads:
+
+```bash
+docker run --rm --gpus all --entrypoint python savant-deepstream -c \
+  'import cv2, numpy as np, pyds, deepstream_nvbufsurface, deepstream_encoders; frame = cv2.cuda.GpuMat(); frame.upload(np.zeros((8, 8, 4), dtype=np.uint8)); assert frame.download().shape == (8, 8, 4)'
+docker run --rm --gpus all --entrypoint gst-launch-1.0 savant-deepstream \
+  videotestsrc num-buffers=1 ! 'video/x-raw,format=RGBA,width=64,height=64' \
+  ! nvvideoconvert ! 'video/x-raw(memory:NVMM),format=RGBA' ! fakesink
+```
+
+The x86 template sample uses these local images by default. Set
+`SAVANT_DEEPSTREAM_IMAGE` and
 `SAVANT_ADAPTERS_DEEPSTREAM_IMAGE` to test registry images instead.
 
 The optional x86 `deepstream-extra` image is unavailable on 9.1 because its
